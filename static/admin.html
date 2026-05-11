@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tokenburner Administration</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{font-family:system-ui,sans-serif;background:#050508;color:#f0f0f0;min-height:100vh;padding:1.5rem}
+  header{max-width:1000px;margin:0 auto 1.5rem;display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700;background:linear-gradient(135deg,#fff,#f97316);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:1.2rem}
+  main{max-width:1000px;margin:0 auto}
+  .tabs{display:flex;gap:.5rem;margin-bottom:1.25rem;border-bottom:1px solid #23232e}
+  .tabs button{background:transparent;border:none;color:#888;padding:.7rem 1rem;cursor:pointer;font-size:.95rem;border-bottom:2px solid transparent}
+  .tabs button.active{color:#f97316;border-color:#f97316}
+  section{display:none}
+  section.active{display:block}
+
+  .row{background:#0c0c12;border:1px solid #23232e;padding:.9rem 1.1rem;border-radius:8px;margin-bottom:.6rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
+  .row .name{font-weight:600;color:#fff}
+  .row .meta{font-size:.8rem;color:#888;flex:1}
+  .row .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;margin-right:.4rem}
+  .row .dot.disabled{background:#f87171}
+  .row button{background:transparent;color:#888;border:1px solid #333;padding:.3rem .65rem;border-radius:5px;font-size:.8rem;cursor:pointer}
+  .row button:hover{color:#f97316;border-color:#f97316}
+  .row button.danger:hover{color:#f87171;border-color:#f87171}
+
+  form{background:#0c0c12;border:1px solid #23232e;padding:1rem;border-radius:8px;margin-bottom:1rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+  form input,form select,form textarea{background:#050508;border:1px solid #333;color:#fff;padding:.45rem .65rem;border-radius:5px;font:inherit}
+  form input:focus,form select:focus,form textarea:focus{outline:none;border-color:#f97316}
+  form textarea{resize:vertical;min-height:60px;width:100%}
+  form button[type=submit]{background:#f97316;color:#050508;border:none;padding:.45rem 1rem;border-radius:5px;font-weight:600;cursor:pointer}
+
+  .dialog{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:1rem}
+  .dialog .box{background:#0c0c12;border:1px solid #f97316;padding:1.5rem;border-radius:10px;max-width:520px;width:100%}
+  .dialog h3{color:#f97316;margin-bottom:.5rem}
+  .dialog pre{background:#050508;border:1px solid #23232e;padding:.75rem;border-radius:6px;margin:.75rem 0;font-size:.8rem;word-break:break-all;white-space:pre-wrap}
+  .dialog button{background:#f97316;color:#050508;border:none;padding:.5rem 1rem;border-radius:5px;font-weight:600;cursor:pointer}
+
+  #gate{display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:80vh}
+  #gate .card{width:100%;max-width:420px;background:#0c0c12;border:1px solid #23232e;padding:2rem;border-radius:10px;text-align:center}
+  #gate h2{margin-bottom:.5rem}#gate p{color:#888;margin-bottom:1rem;font-size:.9rem}
+  #gate input{width:100%;background:#050508;border:1px solid #333;color:#fff;padding:.6rem;border-radius:6px;font-family:monospace;font-size:.85rem;margin-bottom:.75rem}
+  #gate button{width:100%;background:#f97316;color:#050508;border:none;padding:.6rem;border-radius:6px;font-weight:600;cursor:pointer}
+  .empty{color:#666;text-align:center;padding:2rem}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="card">
+    <h2>&#x1F525; Administration</h2>
+    <p>Paste your tokenburner API key.</p>
+    <input id="gate-input" type="password" placeholder="sk_...">
+    <button id="gate-submit">Unlock</button>
+  </div>
+</div>
+
+<div id="app" hidden>
+<header>
+  <div class="brand">&#x1F525; Administration</div>
+  <button onclick="sessionStorage.removeItem('tokenburner_api_key');location.reload()" style="background:transparent;color:#888;border:1px solid #333;padding:.3rem .7rem;border-radius:5px;cursor:pointer;font-size:.85rem">Forget key</button>
+</header>
+<main>
+  <div class="tabs">
+    <button data-tab="accounts" class="active">Accounts</button>
+    <button data-tab="context">Context</button>
+  </div>
+
+  <section id="accounts" class="active">
+    <form id="new-account">
+      <input id="a-username" placeholder="username (e.g. alice)" required>
+      <input id="a-email" placeholder="email (optional)" type="email">
+      <select id="a-tier">
+        <option value="basic">Basic (Haiku+Sonnet)</option>
+        <option value="pro">Pro (+Opus)</option>
+      </select>
+      <button type="submit">Create account</button>
+    </form>
+    <div id="accounts-list"></div>
+  </section>
+
+  <section id="context">
+    <form id="context-form">
+      <input id="c-account" placeholder="account (or _shared)" required style="min-width:200px">
+      <input id="c-key" placeholder="context key (e.g. preferences)" required style="flex:1;min-width:160px">
+      <textarea id="c-content" placeholder="content..." required></textarea>
+      <button type="submit">Save context</button>
+    </form>
+    <form id="context-load" style="background:transparent;border:none;padding:0">
+      <input id="c-load-account" placeholder="view context for account (or _shared)" style="flex:1">
+      <button type="submit">Load</button>
+    </form>
+    <div id="context-list"></div>
+  </section>
+</main>
+</div>
+
+<div id="dialog" class="dialog" hidden>
+  <div class="box">
+    <h3 id="d-title">Account created</h3>
+    <p id="d-body"></p>
+    <pre id="d-secret"></pre>
+    <button id="d-close">Got it — I saved the secret</button>
+  </div>
+</div>
+
+<script>
+const KEY="tokenburner_api_key";
+function getKey(){
+  const u=new URLSearchParams(location.search).get("key");
+  if(u){ sessionStorage.setItem(KEY,u); history.replaceState({},"",location.pathname); return u; }
+  return sessionStorage.getItem(KEY);
+}
+let key=getKey();
+
+async function api(p,opts={}){
+  opts.headers={...(opts.headers||{}),"X-API-Key":key};
+  if(opts.body && typeof opts.body==="object"){ opts.body=JSON.stringify(opts.body); opts.headers["Content-Type"]="application/json"; }
+  const r=await fetch(p,opts);
+  if(!r.ok){ const t=await r.text(); throw new Error(t||r.status); }
+  return r.json();
+}
+function esc(s){ return (s||"").replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+function fmt(ts){ try{return new Date(ts).toLocaleString()}catch{return ts} }
+
+async function loadAccounts(){
+  const host=document.getElementById("accounts-list");
+  try{
+    const {accounts}=await api("/api/agent/accounts");
+    if(!accounts.length){ host.innerHTML='<div class="empty">No accounts yet.</div>'; return; }
+    host.innerHTML=accounts.map(a=>`
+      <div class="row" data-u="${a.username}">
+        <div>
+          <span class="dot ${a.status==='active'?'':'disabled'}"></span>
+          <span class="name">${esc(a.username)}</span>
+        </div>
+        <div class="meta">${esc(a.email||"")} · tier: <b>${esc(a.tier)}</b> · ${esc(a.iam_user)} · ${fmt(a.created_at)}</div>
+        <button data-act="toggle">${a.status==='active'?'Disable':'Enable'}</button>
+        <button data-act="tier">Set tier</button>
+        <button class="danger" data-act="delete">Delete</button>
+      </div>`).join("");
+    for(const row of host.querySelectorAll(".row")){
+      row.addEventListener("click",async e=>{
+        const btn=e.target.closest("button"); if(!btn) return;
+        const u=row.dataset.u;
+        const act=btn.dataset.act;
+        try{
+          if(act==="toggle"){
+            const isOn=btn.textContent.trim()==="Disable";
+            await api(`/api/agent/accounts/${u}/${isOn?"disable":"enable"}`,{method:"POST"});
+          } else if(act==="tier"){
+            const t=prompt("Tier (basic or pro):","pro"); if(!t) return;
+            await api(`/api/agent/accounts/${u}/tier`,{method:"POST",body:{tier:t}});
+          } else if(act==="delete"){
+            if(!confirm(`Delete account ${u}? Removes IAM user + access key.`)) return;
+            await api(`/api/agent/accounts/${u}`,{method:"DELETE"});
+          }
+          loadAccounts();
+        }catch(err){ alert(`failed: ${err.message}`); }
+      });
+    }
+  }catch(e){ host.innerHTML=`<div class="empty">error: ${esc(e.message)}</div>`; }
+}
+
+async function loadContext(account){
+  if(!account) return;
+  const host=document.getElementById("context-list");
+  try{
+    const {items}=await api(`/api/agent/context?account=${encodeURIComponent(account)}`);
+    if(!items.length){ host.innerHTML='<div class="empty">No context entries.</div>'; return; }
+    host.innerHTML=items.map(it=>`
+      <div class="row" data-k="${esc(it.context_key)}" data-a="${esc(it.account_id)}">
+        <div class="name" style="min-width:120px">${esc(it.context_key)}</div>
+        <div class="meta" style="white-space:pre-wrap;max-height:80px;overflow:auto">${esc(it.content).slice(0,400)}</div>
+        <button class="danger" data-act="del">Delete</button>
+      </div>`).join("");
+    for(const row of host.querySelectorAll(".row")){
+      row.querySelector("button").addEventListener("click",async()=>{
+        if(!confirm(`Delete ${row.dataset.a} / ${row.dataset.k}?`)) return;
+        await api("/api/agent/context",{method:"DELETE",body:{account_id:row.dataset.a,context_key:row.dataset.k}});
+        loadContext(account);
+      });
+    }
+  }catch(e){ host.innerHTML=`<div class="empty">error: ${esc(e.message)}</div>`; }
+}
+
+function showDialog(title,body,secret){
+  document.getElementById("d-title").textContent=title;
+  document.getElementById("d-body").textContent=body;
+  document.getElementById("d-secret").textContent=secret;
+  document.getElementById("dialog").hidden=false;
+}
+
+async function init(){
+  if(!key){ return; }
+  try{ await api("/api/agent/accounts"); }catch{ key=null; sessionStorage.removeItem(KEY); document.getElementById("gate").style.display="flex"; document.getElementById("app").hidden=true; return; }
+  document.getElementById("gate").style.display="none";
+  document.getElementById("app").hidden=false;
+
+  for(const b of document.querySelectorAll(".tabs button")){
+    b.addEventListener("click",()=>{
+      for(const x of document.querySelectorAll(".tabs button")) x.classList.toggle("active",x===b);
+      for(const s of document.querySelectorAll("section")) s.classList.toggle("active",s.id===b.dataset.tab);
+    });
+  }
+
+  loadAccounts();
+
+  document.getElementById("new-account").addEventListener("submit",async e=>{
+    e.preventDefault();
+    const username=document.getElementById("a-username").value.trim();
+    const email=document.getElementById("a-email").value.trim();
+    const tier=document.getElementById("a-tier").value;
+    try{
+      const acct=await api("/api/agent/accounts",{method:"POST",body:{username,email,tier}});
+      showDialog(
+        `Created: ${acct.username}`,
+        `IAM user: ${acct.iam_user}\nAccess key ID: ${acct.access_key_id}\nTier: ${acct.tier}\n\nSave the secret_access_key below — it is never shown again.`,
+        acct.secret_access_key,
+      );
+      document.getElementById("new-account").reset();
+      loadAccounts();
+    }catch(err){ alert(`failed: ${err.message}`); }
+  });
+
+  document.getElementById("context-form").addEventListener("submit",async e=>{
+    e.preventDefault();
+    const body={
+      account_id:document.getElementById("c-account").value.trim(),
+      context_key:document.getElementById("c-key").value.trim(),
+      content:document.getElementById("c-content").value,
+    };
+    try{
+      await api("/api/agent/context",{method:"POST",body});
+      document.getElementById("c-key").value="";
+      document.getElementById("c-content").value="";
+      document.getElementById("c-load-account").value=body.account_id;
+      loadContext(body.account_id);
+    }catch(err){ alert(`failed: ${err.message}`); }
+  });
+
+  document.getElementById("context-load").addEventListener("submit",e=>{
+    e.preventDefault();
+    loadContext(document.getElementById("c-load-account").value.trim());
+  });
+
+  document.getElementById("d-close").addEventListener("click",()=>{ document.getElementById("dialog").hidden=true; });
+}
+
+document.getElementById("gate-submit").addEventListener("click",async()=>{
+  const v=document.getElementById("gate-input").value.trim();
+  if(!v) return;
+  key=v;
+  try{ await api("/api/agent/accounts"); sessionStorage.setItem(KEY,v); init(); }
+  catch{ document.getElementById("gate-input").value=""; document.getElementById("gate-input").placeholder="Invalid key"; key=null; }
+});
+document.getElementById("gate-input").addEventListener("keydown",e=>{ if(e.key==="Enter") document.getElementById("gate-submit").click(); });
+
+init();
+</script>
+</body>
+</html>
