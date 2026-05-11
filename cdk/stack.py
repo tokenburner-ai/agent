@@ -55,9 +55,11 @@ class AgentStack(cdk.Stack):
         )
 
         # ── Tier policies (attached to per-account IAM users) ────────────────
+        # IAM policy names are account-global, so suffix with region to allow
+        # agent to be deployed in multiple regions of the same account.
         basic_policy = iam.ManagedPolicy(
             self, "TierBasic",
-            managed_policy_name="tokenburner-agent-tier-basic",
+            managed_policy_name=f"tokenburner-agent-tier-basic-{self.region}",
             description="Bedrock Haiku + Sonnet access for tokenburner-agent accounts",
             statements=[
                 iam.PolicyStatement(
@@ -74,7 +76,7 @@ class AgentStack(cdk.Stack):
         )
         pro_policy = iam.ManagedPolicy(
             self, "TierPro",
-            managed_policy_name="tokenburner-agent-tier-pro",
+            managed_policy_name=f"tokenburner-agent-tier-pro-{self.region}",
             description="Bedrock Haiku + Sonnet + Opus access for tokenburner-agent pro tier",
             statements=[
                 iam.PolicyStatement(
