@@ -1,0 +1,91 @@
+#!/bin/bash
+# Tokenburner pre-push security audit.
+# Blocks the push if any tracked file or any commit in the push contains
+# a forbidden pattern. Based on assistant/security-audit.md rules.
+#
+# Bypass (emergency only): git push --no-verify
+
+set -u
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+REPO_NAME="$(basename "$REPO_ROOT")"
+RED=$'\033[31m'
+YEL=$'\033[33m'
+OFF=$'\033[0m'
+FAIL=0
+
+# Read stdin to discover what refs are being pushed.
+RANGES=()
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    continue  # deleting a branch, nothing to scan
+  fi
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    # New branch — scan from root
+    RANGES+=("$local_sha")
+  else
+    RANGES+=("${remote_sha}..${local_sha}")
+  fi
+done
+
+scan_tracked() {
+  local label="$1" pattern="$2"
+  local hits
+  # Exclude .githooks/ — the hook itself contains the patterns literally.
+  hits="$(git grep -nE "$pattern" -- ':!.githooks/**' 2>/dev/null | head -5)"
+  if [ -n "$hits" ]; then
+    echo "${RED}[BLOCKED $label in tracked files]${OFF}"
+    echo "$hits" | sed 's/^/  /'
+    FAIL=1
+  fi
+}
+
+scan_range() {
+  local label="$1" pattern="$2"
+  for range in "${RANGES[@]}"; do
+    local hits
+    # Restrict to diffs touching files OTHER than .githooks/pre-push itself.
+    hits="$(git log -p "$range" -- . ':!.githooks/**' 2>/dev/null | grep -nE "^\+.*${pattern}" | head -5)"
+    if [ -n "$hits" ]; then
+      echo "${RED}[BLOCKED $label in commits being pushed]${OFF}"
+      echo "$hits" | sed 's/^/  /'
+      FAIL=1
+    fi
+  done
+}
+
+echo "→ tokenburner pre-push audit on $REPO_NAME"
+
+# Hard-fail patterns — true leaks
+scan_tracked "AWS account id 968146339428" '968146339428'
+scan_tracked "AKIA access key"      'AKIA[A-Z0-9]{16}'
+scan_tracked "sk_ api key literal"  'sk_[a-f0-9]{20,}'
+scan_tracked "Private key PEM"      'BEGIN (RSA|OPENSSH|EC|DSA|PGP) PRIVATE'
+scan_tracked "Personal email"       '[A-Za-z0-9._%+-]+@(yahoo|gmail|hotmail|zainar)\.com'
+scan_tracked "Personal name"        '(joel\s*lach|joelllach|joellach)'
+
+scan_range "AWS account id 968146339428" '968146339428'
+scan_range "AKIA access key" 'AKIA[A-Z0-9]{16}'
+scan_range "sk_ api key literal" 'sk_[a-f0-9]{20,}'
+scan_range "Private key PEM" 'BEGIN (RSA|OPENSSH|EC|DSA|PGP) PRIVATE'
+scan_range "Personal email" '[A-Za-z0-9._%+-]+@(yahoo|gmail|hotmail|zainar)\.com'
+
+# Co-Authored-By trailers in commit messages being pushed.
+# Must be a line starting with the trailer prefix — not a mention of the
+# phrase anywhere in the body.
+for range in "${RANGES[@]}"; do
+  if git log "$range" --format='%b' 2>/dev/null | grep -qiE '^co-authored-by:'; then
+    echo "${RED}[BLOCKED Co-Authored-By trailer in commit]${OFF}"
+    echo "  Tokenburner public repos must not include Co-Authored-By trailers."
+    FAIL=1
+  fi
+done
+
+if [ $FAIL -eq 1 ]; then
+  echo ""
+  echo "${RED}Push blocked.${OFF} Fix the issues above and try again."
+  echo "Emergency bypass: git push --no-verify"
+  exit 1
+fi
+
+echo "${YEL}✓${OFF} audit passed"
+exit 0
