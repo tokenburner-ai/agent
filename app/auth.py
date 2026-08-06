@@ -93,3 +93,21 @@ def require_auth(f):
         request.identity = ident
         return f(*a, **kw)
     return decorated
+
+
+def require_write(f):
+    """Authenticate, then require the write permission.
+
+    Use on routes that change state. The admin API can create and delete IAM
+    users and issue access keys, so a read-only key must not reach them.
+    """
+    @wraps(f)
+    def decorated(*a, **kw):
+        ident = get_identity()
+        if not ident:
+            return jsonify({"error": "Authentication required"}), 401
+        if not ident.can_write:
+            return jsonify({"error": "Write permission required"}), 403
+        request.identity = ident
+        return f(*a, **kw)
+    return decorated

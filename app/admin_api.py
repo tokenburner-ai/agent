@@ -3,7 +3,9 @@
 Generalized from kids-bedrock/manage.py. Instead of a hardcoded KIDS dict,
 accounts live in the `tokenburner-agent-accounts` DynamoDB table.
 
-Routes (all require require_auth — shared tokenburner api-keys):
+Routes (all require require_auth — shared tokenburner api-keys.
+Routes that change state additionally require the write permission
+via require_write, since creating an account issues real IAM credentials):
 
   Accounts
   --------
@@ -37,7 +39,7 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from flask import Blueprint, jsonify, request
 
-from auth import require_auth
+from auth import require_auth, require_write
 
 admin_bp = Blueprint("admin_bp", __name__)
 
@@ -93,7 +95,7 @@ def list_accounts():
 
 
 @admin_bp.route("/api/agent/accounts", methods=["POST"])
-@require_auth
+@require_write
 def create_account():
     body = request.get_json() or {}
     username = (body.get("username") or "").strip().lower()
@@ -157,7 +159,7 @@ def get_account(username):
 
 
 @admin_bp.route("/api/agent/accounts/<username>/disable", methods=["POST"])
-@require_auth
+@require_write
 def disable_account(username):
     item = _accounts().get_item(Key={"username": username}).get("Item")
     if not item:
@@ -175,7 +177,7 @@ def disable_account(username):
 
 
 @admin_bp.route("/api/agent/accounts/<username>/enable", methods=["POST"])
-@require_auth
+@require_write
 def enable_account(username):
     item = _accounts().get_item(Key={"username": username}).get("Item")
     if not item:
@@ -193,7 +195,7 @@ def enable_account(username):
 
 
 @admin_bp.route("/api/agent/accounts/<username>/tier", methods=["POST"])
-@require_auth
+@require_write
 def set_tier(username):
     body = request.get_json() or {}
     tier = (body.get("tier") or "").strip().lower()
@@ -226,7 +228,7 @@ def set_tier(username):
 
 
 @admin_bp.route("/api/agent/accounts/<username>", methods=["DELETE"])
-@require_auth
+@require_write
 def delete_account(username):
     item = _accounts().get_item(Key={"username": username}).get("Item")
     if not item:
@@ -261,7 +263,7 @@ def list_context():
 
 
 @admin_bp.route("/api/agent/context", methods=["POST"])
-@require_auth
+@require_write
 def put_context():
     body = request.get_json() or {}
     account_id = (body.get("account_id") or "").strip().lower()
@@ -284,7 +286,7 @@ def put_context():
 
 
 @admin_bp.route("/api/agent/context", methods=["DELETE"])
-@require_auth
+@require_write
 def delete_context():
     body = request.get_json() or {}
     account_id = (body.get("account_id") or "").strip().lower()
