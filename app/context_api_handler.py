@@ -1,17 +1,20 @@
 """Context API — plain Lambda handler for reading context entries.
 
 Exposed via a Lambda function URL with AWS_IAM auth. Each provisioned account
-signs requests with its own IAM access key, so the response is scoped to what
-that account is allowed to read: its own context rows plus `_shared`.
+signs requests with its own IAM access key. The account is derived from the
+signed caller, so the response is always scoped to that account's own rows plus
+`_shared`, whatever the request asks for.
 
-GET /?account=<name>
-GET /?account=<name>&key=<context_key>
+GET /
+GET /?key=<context_key>
+GET /?account=<own name>          (accepted only when it matches the caller)
 
 Response: {"context": [{account_id, context_key, content, description, updated_at}, ...]}
 """
 
 import json
 import os
+import re
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -47,11 +50,44 @@ def _resp(status, body):
     }
 
 
+IAM_USER_PREFIX = "tokenburner-agent-"
+
+# Only an IAM user provisioned by the admin API counts. Matching on the last
+# ARN segment alone is not enough: an assumed-role ARN ends with a session name
+# the caller chooses, so a role session called tokenburner-agent-<name> would
+# otherwise be read as that account.
+_CALLER_ARN = re.compile(
+    r"^arn:aws[a-z0-9-]*:iam::\d{12}:user/tokenburner-agent/"
+    + re.escape(IAM_USER_PREFIX)
+    + r"(?P<account>[A-Za-z0-9_.@-]+)$"
+)
+
+
+def _caller_account(event) -> str:
+    """Return the account name of the signed caller, or "" if it is not one.
+
+    The Function URL uses AWS_IAM auth, so the authorizer reports the caller's
+    IAM user ARN. Accounts are provisioned as IAM users named
+    tokenburner-agent-<account> under the /tokenburner-agent/ path, so the whole
+    ARN shape is required rather than just its last segment.
+    """
+    iam_ctx = ((event.get("requestContext") or {}).get("authorizer") or {}).get("iam") or {}
+    match = _CALLER_ARN.match(iam_ctx.get("userArn") or "")
+    return match.group("account").lower() if match else ""
+
+
 def handler(event, _ctx):
     params = event.get("queryStringParameters") or {}
-    account = (params.get("account") or "").strip().lower()
+
+    # Scope the response to the signed caller. Trusting ?account= let any
+    # provisioned account read any other account's rows by naming it.
+    account = _caller_account(event)
     if not account:
-        return _resp(400, {"error": "missing ?account= parameter"})
+        return _resp(403, {"error": "caller is not a provisioned account"})
+
+    requested = (params.get("account") or "").strip().lower()
+    if requested and requested != account:
+        return _resp(403, {"error": "cannot read another account's context"})
 
     key = params.get("key")
     items = []
