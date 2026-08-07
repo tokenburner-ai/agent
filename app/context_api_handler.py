@@ -14,6 +14,7 @@ Response: {"context": [{account_id, context_key, content, description, updated_a
 
 import json
 import os
+import re
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -51,21 +52,28 @@ def _resp(status, body):
 
 IAM_USER_PREFIX = "tokenburner-agent-"
 
+# Only an IAM user provisioned by the admin API counts. Matching on the last
+# ARN segment alone is not enough: an assumed-role ARN ends with a session name
+# the caller chooses, so a role session called tokenburner-agent-<name> would
+# otherwise be read as that account.
+_CALLER_ARN = re.compile(
+    r"^arn:aws[a-z0-9-]*:iam::\d{12}:user/tokenburner-agent/"
+    + re.escape(IAM_USER_PREFIX)
+    + r"(?P<account>[A-Za-z0-9_.@-]+)$"
+)
+
 
 def _caller_account(event) -> str:
-    """Return the account name of the signed caller, or "" if it is not an account.
+    """Return the account name of the signed caller, or "" if it is not one.
 
-    The Function URL uses AWS_IAM auth, so the authorizer gives us the caller's
+    The Function URL uses AWS_IAM auth, so the authorizer reports the caller's
     IAM user ARN. Accounts are provisioned as IAM users named
-    tokenburner-agent-<account>, so the account name is derivable from the
-    principal and never needs to be taken from the request.
+    tokenburner-agent-<account> under the /tokenburner-agent/ path, so the whole
+    ARN shape is required rather than just its last segment.
     """
     iam_ctx = ((event.get("requestContext") or {}).get("authorizer") or {}).get("iam") or {}
-    arn = iam_ctx.get("userArn") or ""
-    user = arn.rsplit("/", 1)[-1] if arn else ""
-    if not user.startswith(IAM_USER_PREFIX):
-        return ""
-    return user[len(IAM_USER_PREFIX):].strip().lower()
+    match = _CALLER_ARN.match(iam_ctx.get("userArn") or "")
+    return match.group("account").lower() if match else ""
 
 
 def handler(event, _ctx):
