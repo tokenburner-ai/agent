@@ -179,10 +179,29 @@ class AgentStack(cdk.Stack):
             function_url_auth_type=_lambda.FunctionUrlAuthType.AWS_IAM,
         )
         # Also attach invoke permission via a managed policy attached to tier users.
+        # Function URLs created since October 2025 require both actions. With
+        # only InvokeFunctionUrl granted, every provisioned account gets 403
+        # from the context URL and can never read its own context.
+        #
+        # InvokeFunction is constrained to invocation through the Function URL.
+        # Granted unconditionally it also permits `lambda:Invoke` directly, and
+        # a direct caller supplies the whole event, including the authorizer
+        # block the handler reads the caller identity from. An account could
+        # then name any other account and read its rows.
         invoke_policy_statements = [
             iam.PolicyStatement(
                 actions=["lambda:InvokeFunctionUrl"],
                 resources=[context_fn.function_arn],
+                conditions={
+                    "StringEquals": {"lambda:FunctionUrlAuthType": "AWS_IAM"},
+                },
+            ),
+            iam.PolicyStatement(
+                actions=["lambda:InvokeFunction"],
+                resources=[context_fn.function_arn],
+                conditions={
+                    "Bool": {"lambda:InvokedViaFunctionUrl": "true"},
+                },
             ),
         ]
         for policy in (basic_policy, pro_policy):
